@@ -159,12 +159,15 @@ async def bolna_webhook(payload: dict, db: AsyncSession = Depends(get_db)):
     extracted_data = payload.get("extracted_data", {})
     telephony_data = payload.get("telephony_data", {})
     
+    # Handle nested category structure (call_outcomes category)
+    call_outcomes = extracted_data.get("call_outcomes", {})
+    
     lead.call_status = "completed"
-    lead.qualification_status = extracted_data.get("qualification_status")
-    lead.budget_range = extracted_data.get("budget_range")
-    lead.is_decision_maker = extracted_data.get("is_decision_maker")
-    lead.timeline = extracted_data.get("timeline")
-    lead.follow_up_requested = extracted_data.get("follow_up_requested")
+    lead.qualification_status = call_outcomes.get("qualification_status")
+    lead.budget_range = call_outcomes.get("budget_range")
+    lead.is_decision_maker = call_outcomes.get("is_decision_maker")
+    lead.timeline = call_outcomes.get("timeline")
+    lead.follow_up_requested = call_outcomes.get("follow_up_requested")
     lead.call_summary = payload.get("transcript", "")[:200] + "..." if payload.get("transcript") else "Call completed"
     lead.transcript = payload.get("transcript")
     lead.call_duration = float(telephony_data.get("duration", 0))
