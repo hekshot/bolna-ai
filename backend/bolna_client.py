@@ -36,8 +36,7 @@ async def trigger_call(recipient_phone: str, lead_name: str, company_name: str, 
         },
     }
 
-    if BOLNA_FROM_PHONE:
-        payload["from_phone_number"] = BOLNA_FROM_PHONE
+    # Don't include from_phone_number - using Bolna's default number
 
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
