@@ -145,54 +145,36 @@ async def delete_lead(lead_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @app.post("/webhook/bolna")
-async def bolna_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-
-    execution_id = (
-        body.get("execution_id")
-        or body.get("call_id")
-        or body.get("data", {}).get("execution_id")
-    )
-
+async def bolna_webhook(payload: dict, db: AsyncSession = Depends(get_db)):
+    execution_id = payload.get("id")
     if not execution_id:
-        return {"status": "ignored", "reason": "no execution_id"}
+        return {"status": "error", "reason": "missing execution_id"}
 
     result = await db.execute(select(Lead).where(Lead.execution_id == execution_id))
     lead = result.scalar_one_or_none()
-
     if not lead:
         return {"status": "ignored", "reason": "lead not found"}
 
-    call_data = body.get("data", body)
+    # Bolna sends execution object directly, not wrapped in "data"
+    extracted_data = payload.get("extracted_data", {})
+    telephony_data = payload.get("telephony_data", {})
+    
+    lead.call_status = "completed"
+    lead.qualification_status = extracted_data.get("qualification_status")
+    lead.budget_range = extracted_data.get("budget_range")
+    lead.is_decision_maker = extracted_data.get("is_decision_maker")
+    lead.timeline = extracted_data.get("timeline")
+    lead.follow_up_requested = extracted_data.get("follow_up_requested")
+    lead.call_summary = payload.get("transcript", "")[:200] + "..." if payload.get("transcript") else "Call completed"
+    lead.transcript = payload.get("transcript")
+    lead.call_duration = float(telephony_data.get("duration", 0))
 
-    lead.call_status = call_data.get("status", lead.call_status)
-    lead.call_duration = call_data.get("duration") or call_data.get("call_duration")
-    lead.transcript = call_data.get("transcript")
-    lead.call_summary = call_data.get("summary") or call_data.get("call_summary")
-
-    extractions = call_data.get("extracted_data") or call_data.get("extractions") or {}
-
-    if isinstance(extractions, str):
-        try:
-            extractions = json.loads(extractions)
-        except Exception:
-            extractions = {}
-
-    if extractions:
-        lead.qualification_status = extractions.get("qualification_status") or extractions.get("Qualification Status")
-        lead.budget_range = extractions.get("budget_range") or extractions.get("Budget Range")
-        lead.is_decision_maker = extractions.get("is_decision_maker") or extractions.get("Decision Maker")
-        lead.timeline = extractions.get("timeline") or extractions.get("Timeline")
-        lead.follow_up_requested = extractions.get("follow_up_requested") or extractions.get("Follow Up Requested")
-
+    # Set status based on qualification
     if lead.qualification_status and lead.qualification_status.lower() in ("qualified", "yes", "true"):
         lead.status = "qualified"
     elif lead.qualification_status and lead.qualification_status.lower() in ("disqualified", "no", "false", "not interested"):
         lead.status = "disqualified"
-    elif lead.call_status in ("completed", "ended", "done"):
+    else:
         lead.status = "completed"
 
     await db.commit()
